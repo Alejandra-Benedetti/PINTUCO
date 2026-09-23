@@ -1296,37 +1296,46 @@ function(root){
 
 /* ─────────── 5 · CUMPLIMIENTOS SELL OUT ─────────── */
 reg('sellout','Comercial','Sell Out cadenas','Hoja «Cumplimientos Sell Out Cadenas»',
-    'Cumplimiento de sell out en cadenas','Cuota frente a avance real en dinero y en litros, por mes, regional y tienda',
+    'Cumplimiento de sell out en cadenas','Cuota frente a avance real en dinero y en litros, por año, mes, regional y tienda',
 function(root){
   const RW=D_RESTO.sellout.rows;
+  const perKey=r=>r[1]+'|'+r[0].trim();
+  const perCmp=(a,b)=>{const pa=a.split('|'),pb=b.split('|');return (pa[0]-pb[0])||(mesIdx(pa[1])-mesIdx(pb[1]));};
+  const perLabel=k=>{const p=k.split('|');return cap(p[1])+' '+p[0];};
   const meses=[...new Set(RW.map(r=>r[0].trim()))].sort((a,b)=>mesIdx(a)-mesIdx(b));
+  const anios=[...new Set(RW.map(r=>r[1]))].sort((a,b)=>a-b);
   const regs=[...new Set(RW.map(r=>r[2]))].sort();
   const tiendas=[...new Set(RW.map(r=>r[3]))].sort();
-  const mesIncompleto=meses[meses.length-1]; // mes más reciente de la hoja · siempre en curso, no comparable a un mes cerrado
-  const S={mes:new Set(),reg:new Set(),tie:new Set(),met:'dinero',ord:'top'};
+  const periodosGlobal=[...new Set(RW.map(perKey))].sort(perCmp);
+  const mesIncompleto=periodosGlobal[periodosGlobal.length-1]; // periodo más reciente de la hoja · siempre en curso, no comparable a uno cerrado
+  const S={mes:new Set(),anio:new Set(),reg:new Set(),tie:new Set(),met:'dinero',ord:'top'};
   root.innerHTML=`<div class="filters"><div class="frow">
     ${fgroup('Mes','<div class="chips" id="s-mes"></div>')}
+    ${anios.length>1?fgroup('Año','<div class="chips" id="s-anio"></div>'):''}
     ${fgroup('Regional','<div class="chips" id="s-reg"></div>')}
     ${fgroup('Tienda','<div class="pick" id="s-ptie"></div>')}
-    ${fgroup('\u00A0','<button class="btn ghost" id="s-reset">Limpiar</button>')}</div></div><div id="s-body"></div>`;
+    ${fgroup(' ','<button class="btn ghost" id="s-reset">Limpiar</button>')}</div></div><div id="s-body"></div>`;
   chipbar(document.getElementById('s-mes'),meses.map(m=>({v:m,t:cap(m)})),S.mes,draw);
+  if(anios.length>1) chipbar(document.getElementById('s-anio'),anios.map(a=>({v:a,t:String(a)})),S.anio,draw);
   chipbar(document.getElementById('s-reg'),regs.map(r=>({v:r,t:r.replace('REGIONAL ','')})),S.reg,draw);
   pickbox(document.getElementById('s-ptie'),'tienda',tiendas,S.tie,draw);
-  document.getElementById('s-reset').onclick=()=>{['mes','reg','tie'].forEach(k=>S[k].clear());
+  document.getElementById('s-reset').onclick=()=>{['mes','anio','reg','tie'].forEach(k=>S[k].clear());
     root.querySelectorAll('.chips').forEach(h=>[...h.children].forEach((c,i)=>c.classList.toggle('on',i===0)));
     const h=document.getElementById('s-ptie');h._lab();h._paint();draw();};
   function draw(){
     const selT=new Set([...S.tie].map(i=>tiendas[i]));
-    const ix=RW.filter(r=>(!S.mes.size||S.mes.has(r[0].trim()))&&(!S.reg.size||S.reg.has(r[2]))&&(!selT.size||selT.has(r[3])));
+    const ix=RW.filter(r=>(!S.mes.size||S.mes.has(r[0].trim()))&&(!S.anio.size||S.anio.has(r[1]))&&(!S.reg.size||S.reg.has(r[2]))&&(!selT.size||selT.has(r[3])));
     const B=document.getElementById('s-body');
     if(!ix.length){B.innerHTML='<div class="card"><div class="empty"><b>Sin datos</b>Ajusta los filtros.</div></div>';return;}
     const cd=ix.reduce((s,r)=>s+r[4],0),cl=ix.reduce((s,r)=>s+r[5],0);
     const ad=ix.reduce((s,r)=>s+r[6],0),al=ix.reduce((s,r)=>s+r[7],0);
     const by=f=>{const m=new Map();for(const r of ix){const k=f(r),o=m.get(k)||[0,0,0,0];
       o[0]+=r[4];o[1]+=r[5];o[2]+=r[6];o[3]+=r[7];m.set(k,o);}return m;};
-    const bm=by(r=>r[0].trim()),br=by(r=>r[2]),bt=by(r=>r[3]);
-    const mk=[...bm.keys()].sort((a,b)=>mesIdx(a)-mesIdx(b));
+    const bm=by(perKey),br=by(r=>r[2]),bt=by(r=>r[3]);
+    const mk=[...bm.keys()].sort(perCmp);
     const mkCerrados=mk.filter(m=>m!==mesIncompleto);
+    const soloUnAnio=new Set(mk.map(k=>k.split('|')[0])).size<=1;
+    const lab=k=>{const p=k.split('|');return cap(p[1]).slice(0,3)+(soloUnAnio?'':(' '+String(p[0]).slice(2)));};
     const rk=[...br.entries()].map(([k,v])=>({t:k.replace('REGIONAL ',''),cd:v[0],cl:v[1],ad:v[2],al:v[3],
       pd:v[0]?v[2]/v[0]:0,pl:v[1]?v[3]/v[1]:0})).sort((a,b)=>b.pd-a.pd);
     let tk=[...bt.entries()].map(([k,v])=>({t:k,cd:v[0],ad:v[2],pd:v[0]?v[2]/v[0]:0,pl:v[1]?v[3]/v[1]:0}));
@@ -1334,11 +1343,11 @@ function(root){
     const gap=rk.slice().sort((a,b)=>(b.cd-b.ad)-(a.cd-a.ad))[0];
     const dif=ix.length?(cd?ad/cd:0)-(cl?al/cl:0):0;
 
-    // variación por tienda entre los dos últimos meses CERRADOS (nunca contra el mes en curso)
+    // variación por tienda entre los dos últimos periodos CERRADOS (nunca contra el periodo en curso)
     const mesAct=mkCerrados[mkCerrados.length-1], mesPrev=mkCerrados[mkCerrados.length-2];
     let varPdv=[];
     if(mesAct&&mesPrev){
-      const porTienda=mes=>{const m=new Map();for(const r of ix){if(r[0].trim()!==mes)continue;
+      const porTienda=per=>{const m=new Map();for(const r of ix){if(perKey(r)!==per)continue;
         const o=m.get(r[3])||[0,0];o[0]+=r[4];o[1]+=r[6];m.set(r[3],o);}return m;};
       const curM=porTienda(mesAct), prevM=porTienda(mesPrev);
       varPdv=[...new Set([...curM.keys(),...prevM.keys()])].map(t=>{
@@ -1348,18 +1357,18 @@ function(root){
       }).filter(o=>o.d!==null).sort((a,b)=>b.d-a.d);
     }
     B.innerHTML=kpis([
-      {l:'Cumplimiento en dinero',v:pc(cd?ad/cd:0),h:money(ad)+' / '+money(cd)+' · incluye '+cap(mesIncompleto)+' parcial',
-       mom:mom(mkCerrados.map(k=>bm.get(k)[0]?bm.get(k)[2]/bm.get(k)[0]:0),mkCerrados.map(x=>cap(x).slice(0,3)))},
+      {l:'Cumplimiento en dinero',v:pc(cd?ad/cd:0),h:money(ad)+' / '+money(cd)+' · incluye '+perLabel(mesIncompleto)+' parcial',
+       mom:mom(mkCerrados.map(k=>bm.get(k)[0]?bm.get(k)[2]/bm.get(k)[0]:0),mkCerrados.map(lab))},
       {l:'Brecha en dinero',v:money(Math.max(cd-ad,0)),h:(cd-ad)>0?'por debajo de la cuota':'cuota superada'},
       {l:'Cumplimiento en litros',v:pc(cl?al/cl:0),h:n0(al)+' L / '+n0(cl)+' L'},
       {l:'Brecha en litros',v:n0(Math.max(cl-al,0))+' L',h:(cl-al)>0?'litros faltantes':'litros por encima'},
-      {l:'Tiendas evaluadas',v:n0(bt.size),h:mk.length+' meses · '+n0(ix.length)+' registros'}])
+      {l:'Tiendas evaluadas',v:n0(bt.size),h:mk.length+' periodo(s) · '+n0(ix.length)+' registros'}])
     +`<div class="grid g2">
       ${card('Evolución','Cuota vs. avance en dinero','Línea de % cumplimiento',
-        comboChart(mk.map(cap),[{n:'Cuota',v:mk.map(k=>bm.get(k)[0]),c:'#0E3A5C'},{n:'Avance',v:mk.map(k=>bm.get(k)[2]),c:'#1B6CA8'}],
+        comboChart(mk.map(lab),[{n:'Cuota',v:mk.map(k=>bm.get(k)[0]),c:'#0E3A5C'},{n:'Avance',v:mk.map(k=>bm.get(k)[2]),c:'#1B6CA8'}],
           mk.map(k=>bm.get(k)[0]?bm.get(k)[2]/bm.get(k)[0]:0),{fmt:money}))}
       ${card('Evolución','Cuota vs. avance en litros','Línea de % cumplimiento',
-        comboChart(mk.map(cap),[{n:'Cuota L',v:mk.map(k=>bm.get(k)[1]),c:'#128C5A'},{n:'Avance L',v:mk.map(k=>bm.get(k)[3]),c:'#E8A33D'}],
+        comboChart(mk.map(lab),[{n:'Cuota L',v:mk.map(k=>bm.get(k)[1]),c:'#128C5A'},{n:'Avance L',v:mk.map(k=>bm.get(k)[3]),c:'#E8A33D'}],
           mk.map(k=>bm.get(k)[1]?bm.get(k)[3]/bm.get(k)[1]:0),{fmt:n0}))}
     </div>`
     +card('Dinero vs. litros','Comparación de ambos indicadores por regional','Una brecha positiva indica que el dinero avanza más rápido que el volumen',
@@ -1383,23 +1392,23 @@ function(root){
             <div class="d">${money(gap.cd-gap.ad)} por debajo de la cuota</div></div>
         </div>`)}
     </div>`
-    +(varPdv.length?card('Variación por tienda','Avance en dinero · '+(mesAct?cap(mesAct):'—')+' vs. '+(mesPrev?cap(mesPrev):'—'),
-        'Comparación entre los dos últimos meses cerrados (nunca contra '+cap(mesIncompleto)+') · positivo = creciendo, negativo = decreciendo',
-        `<div class="tw short"><table><thead><tr><th></th><th>Tienda</th><th class="r">Avance ${mesPrev?cap(mesPrev).slice(0,3):''}</th>
-          <th class="r">Avance ${mesAct?cap(mesAct).slice(0,3):''}</th><th class="r">Variación</th><th>Tendencia</th></tr></thead><tbody>
+    +(varPdv.length?card('Variación por tienda','Avance en dinero · '+(mesAct?perLabel(mesAct):'—')+' vs. '+(mesPrev?perLabel(mesPrev):'—'),
+        'Comparación entre los dos últimos periodos cerrados (nunca contra '+perLabel(mesIncompleto)+') · positivo = creciendo, negativo = decreciendo',
+        `<div class="tw short"><table><thead><tr><th></th><th>Tienda</th><th class="r">Avance ${mesPrev?lab(mesPrev):''}</th>
+          <th class="r">Avance ${mesAct?lab(mesAct):''}</th><th class="r">Variación</th><th>Tendencia</th></tr></thead><tbody>
           ${varPdv.map((o,i)=>{const tri=o.d>0.02?'p-ok':o.d<-0.02?'p-ba':'p-nu';const triT=o.d>0.02?'Creciendo':o.d<-0.02?'Decreciendo':'Estable';
             return `<tr><td class="rk">${i+1}</td><td>${esc(o.t)}</td><td class="r">${money(o.avPrev)}</td><td class="r">${money(o.avAct)}</td>
               <td class="r">${(o.d>=0?'+':'')+(o.d*100).toFixed(1).replace('.',',')}%</td><td><span class="pill ${tri}">${triT}</span></td></tr>`;}).join('')}
           </tbody></table></div>`)
         :'')
-    +card('Trazabilidad','Detalle mes · regional · tienda',null,
-      table([{t:'Mes'},{t:'Regional'},{t:'Tienda'},{t:'Cuota $',r:1},{t:'Avance $',r:1},{t:'Cumpl. $',r:1},{t:'Cuota L',r:1},{t:'Avance L',r:1},{t:'Cumpl. L',r:1}],
-        ix.slice().sort((a,b)=>mesIdx(a[0])-mesIdx(b[0])||a[3].localeCompare(b[3])).map(r=>{
+    +card('Trazabilidad','Detalle año · mes · regional · tienda',null,
+      table([{t:'Año',r:1},{t:'Mes'},{t:'Regional'},{t:'Tienda'},{t:'Cuota $',r:1},{t:'Avance $',r:1},{t:'Cumpl. $',r:1},{t:'Cuota L',r:1},{t:'Avance L',r:1},{t:'Cumpl. L',r:1}],
+        ix.slice().sort((a,b)=>perCmp(perKey(a),perKey(b))||a[3].localeCompare(b[3])).map(r=>{
           const pd=r[4]?r[6]/r[4]:0,pl=r[5]?r[7]/r[5]:0;
-          return [cap(r[0].trim()),esc(r[2].replace('REGIONAL ','')),esc(r[3]),money(r[4]),money(r[6]),
+          return [String(r[1]),cap(r[0].trim()),esc(r[2].replace('REGIONAL ','')),esc(r[3]),money(r[4]),money(r[6]),
             `<span class="pill ${sem(pd)}">${pc(pd)}</span>`,n0(r[5]),n0(r[7]),`<span class="pill ${sem(pl)}">${pc(pl)}</span>`];}),{max:300}));
     wireSegs({'s-or':v=>S.ord=v},draw);
-    setPeriodo('Periodo: '+cap(mk[0])+' — '+cap(mk[mk.length-1])+' 2026 · '+n0(bt.size)+' tiendas');
+    setPeriodo('Periodo: '+perLabel(mk[0])+' — '+perLabel(mk[mk.length-1])+' · '+n0(bt.size)+' tiendas');
     document.getElementById('fsrc').textContent='Hoja «Cumplimientos Sell Out Cadenas» · '+n0(ix.length)+' filas';
   }
   draw();
